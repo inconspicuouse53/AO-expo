@@ -16,9 +16,24 @@ import {
   TextInput,
   KeyboardAvoidingView,
   ScrollView,
+  Alert,
 } from 'react-native';
 import * as Speech from 'expo-speech';
 import AOLogo from './AOLogo';
+
+// Native speech recognition (requires dev build — not available in Expo Go)
+let NativeSpeechModule: any = null;
+let useNativeSpeechEvent: any = null;
+if (Platform.OS !== 'web') {
+  try {
+    const mod = require('expo-speech-recognition');
+    NativeSpeechModule = mod.ExpoSpeechRecognitionModule;
+    useNativeSpeechEvent = mod.useSpeechRecognitionEvent;
+  } catch (e) {
+    // Not available (e.g. running in Expo Go without native module)
+    console.log('[AO] expo-speech-recognition not available:', e);
+  }
+}
 
 // Web Speech Recognition types
 let SpeechRecognition: any = null;
@@ -74,6 +89,72 @@ export default function App() {
 
   // Track used responses per category to avoid repeats
   const usedResponsesRef = useRef<Map<string, Set<number>>>(new Map());
+
+  // Native speech recognition state
+  const [nativeSpeechAvailable, setNativeSpeechAvailable] = useState(false);
+  const nativeTranscriptRef = useRef('');
+  const nativeListeningRef = useRef(false);
+  const nativeSafetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Check if native speech recognition is available
+  useEffect(() => {
+    if (Platform.OS !== 'web' && NativeSpeechModule) {
+      // Request permissions on mount
+      NativeSpeechModule.requestPermissionsAsync()
+        .then((result: any) => {
+          console.log('[AO] Speech recognition permissions:', result);
+          if (result.granted) {
+            setNativeSpeechAvailable(true);
+          }
+        })
+        .catch((e: any) => {
+          console.log('[AO] Permission request failed:', e);
+        });
+    }
+  }, []);
+
+  // Wire up native speech recognition event listeners
+  useEffect(() => {
+    if (Platform.OS !== 'web' && NativeSpeechModule) {
+      const resultSub = NativeSpeechModule.addListener('result', (event: any) => {
+        const transcript = event.results?.[0]?.transcript || '';
+        console.log('[AO] Native STT result:', transcript, 'isFinal:', event.isFinal);
+        nativeTranscriptRef.current = transcript;
+        // Show interim results in the input field
+        setInputText(transcript);
+      });
+
+      const errorSub = NativeSpeechModule.addListener('error', (event: any) => {
+        console.log('[AO] Native STT error:', event.error, event.message);
+        if (nativeListeningRef.current) {
+          nativeListeningRef.current = false;
+          setIsListening(false);
+          animateButton(1);
+          // Submit whatever we got
+          const captured = nativeTranscriptRef.current.trim();
+          submitQuestionRef.current(captured);
+        }
+      });
+
+      const endSub = NativeSpeechModule.addListener('end', () => {
+        console.log('[AO] Native STT ended');
+        if (nativeListeningRef.current) {
+          nativeListeningRef.current = false;
+          setIsListening(false);
+          animateButton(1);
+          // Submit whatever we captured
+          const captured = nativeTranscriptRef.current.trim();
+          submitQuestionRef.current(captured);
+        }
+      });
+
+      return () => {
+        resultSub.remove();
+        errorSub.remove();
+        endSub.remove();
+      };
+    }
+  }, [animateButton]);
 
   // Initialize speech recognition
   useEffect(() => {
@@ -153,13 +234,20 @@ export default function App() {
         utterance.onerror = () => setIsResponding(false);
         window.speechSynthesis.speak(utterance);
       } else {
+        console.log('[AO] Speaking via expo-speech:', text.substring(0, 50) + '...');
         setIsResponding(true);
         Speech.speak(text, {
           language: 'en-US',
           rate: 1.0,
           pitch: 1.0,
-          onDone: () => setIsResponding(false),
-          onError: () => setIsResponding(false),
+          onDone: () => {
+            console.log('[AO] TTS done');
+            setIsResponding(false);
+          },
+          onError: (err) => {
+            console.log('[AO] TTS error:', err);
+            setIsResponding(false);
+          },
         });
       }
     } catch (e) {
@@ -499,6 +587,7 @@ export default function App() {
       usedSet.add(idx);
       const randomResponse = pool[idx];
 
+      console.log('[AO] Generated response:', randomResponse.substring(0, 50) + '...');
       setResponse(randomResponse);
       speakResponse(randomResponse);
     },
@@ -507,14 +596,16 @@ export default function App() {
 
   const submitQuestion = useCallback(
     (text: string) => {
+      console.log('[AO] submitQuestion called with:', JSON.stringify(text));
       // If empty or very short (unclear speech), use the 'unclear' category
       if (!text || text.length < 2) {
-        setSubmittedText('');
+        setSubmittedText('...');
         setInputText('');
         setIsThinking(true);
         setResponse('');
         animateButton(0.9);
         setTimeout(() => {
+          console.log('[AO] Thinking done, generating unclear response');
           setIsThinking(false);
           animateButton(1);
           generateWittyResponse('__unclear__');
@@ -530,6 +621,7 @@ export default function App() {
       animateButton(0.9);
 
       setTimeout(() => {
+        console.log('[AO] Thinking done, generating response for:', text);
         setIsThinking(false);
         animateButton(1);
         generateWittyResponse(text);
@@ -607,12 +699,87 @@ export default function App() {
   stopListeningRef.current = stopListening;
   submitQuestionRef.current = submitQuestion;
 
-  // Native button handlers (no voice recognition in Expo Go)
+  // Native voice recognition handlers (hold-to-talk)
+  const startNativeListening = useCallback(() => {
+    if (!NativeSpeechModule || !nativeSpeechAvailable) {
+      // Fallback: just submit whatever is in the text input
+      console.log('[AO] No native speech — submitting text input');
+      const text = inputText.trim();
+      animateButton(0.9);
+      setTimeout(() => animateButton(1), 150);
+      submitQuestion(text);
+      return;
+    }
+
+    console.log('[AO] Starting native speech recognition...');
+    nativeTranscriptRef.current = '';
+    setInputText('');
+    setResponse('');
+    setIsListening(true);
+    nativeListeningRef.current = true;
+    animateButton(0.9);
+
+    try {
+      NativeSpeechModule.start({
+        lang: 'en-US',
+        interimResults: true,
+        continuous: false,
+        addsPunctuation: true,
+      });
+    } catch (e) {
+      console.log('[AO] Native STT start error:', e);
+      setIsListening(false);
+      nativeListeningRef.current = false;
+      animateButton(1);
+    }
+
+    // Safety: auto-stop after 8 seconds
+    if (nativeSafetyTimerRef.current) clearTimeout(nativeSafetyTimerRef.current);
+    nativeSafetyTimerRef.current = setTimeout(() => {
+      if (nativeListeningRef.current) {
+        console.log('[AO] Safety timeout — stopping native listening');
+        stopNativeListening();
+      }
+    }, 8000);
+  }, [nativeSpeechAvailable, inputText, animateButton, submitQuestion]);
+
+  const stopNativeListening = useCallback(() => {
+    // Clear safety timer
+    if (nativeSafetyTimerRef.current) {
+      clearTimeout(nativeSafetyTimerRef.current);
+      nativeSafetyTimerRef.current = null;
+    }
+
+    if (!NativeSpeechModule || !nativeListeningRef.current) {
+      return;
+    }
+
+    console.log('[AO] Stopping native speech recognition...');
+    nativeListeningRef.current = false;
+    setIsListening(false);
+    animateButton(1);
+
+    try {
+      NativeSpeechModule.stop();
+    } catch (e) {
+      // Already stopped
+    }
+
+    // Submit whatever we captured
+    const captured = nativeTranscriptRef.current.trim();
+    setTimeout(() => {
+      submitQuestionRef.current(captured);
+    }, 300);
+  }, [animateButton]);
+
+  // Fallback: tap to submit text (when voice is not available)
   const handleNativeButtonPress = useCallback(() => {
-    // On native, tap = submit whatever is in the text input
+    console.log('[AO] Button pressed, inputText:', inputText);
     const text = inputText.trim();
+    animateButton(0.9);
+    setTimeout(() => animateButton(1), 150);
     submitQuestion(text);
-  }, [inputText, submitQuestion]);
+  }, [inputText, submitQuestion, animateButton]);
 
   // Attach native DOM touch events for reliable hold-to-talk on mobile Safari
   useEffect(() => {
@@ -810,9 +977,9 @@ export default function App() {
 
       <View style={styles.buttonArea}>
         {/* Response text display */}
-        {(submittedText || response) ? (
+        {(submittedText || response || isThinking) ? (
           <View style={styles.responseArea}>
-            {submittedText ? (
+            {submittedText && submittedText !== '...' ? (
               <Text style={styles.questionText}>"{submittedText}"</Text>
             ) : null}
             {isThinking ? (
@@ -828,7 +995,9 @@ export default function App() {
             <Text style={styles.hintText}>
               {Platform.OS === 'web'
                 ? 'Hold the button to ask, or type below'
-                : 'Tap the button to ask, or type below'}
+                : nativeSpeechAvailable
+                  ? 'Hold the button to ask, or type below'
+                  : 'Tap the button to ask, or type below'}
             </Text>
           </View>
         )}
@@ -881,15 +1050,25 @@ export default function App() {
             </Animated.View>
           </View>
         ) : (
-          /* Native: Pressable tap to submit */
+          /* Native: Hold-to-talk with voice recognition (or tap to submit text) */
           <Pressable
-            onPress={handleNativeButtonPress}
+            onPressIn={nativeSpeechAvailable ? startNativeListening : undefined}
+            onPressOut={nativeSpeechAvailable ? stopNativeListening : undefined}
+            onPress={!nativeSpeechAvailable ? handleNativeButtonPress : undefined}
             style={styles.buttonTouchArea}>
             <Animated.View
               style={[
                 styles.buttonContainer,
                 {transform: [{scale: buttonScale}]},
               ]}>
+              {/* Plasma rings (listening) */}
+              {isListening && (
+                <>
+                  <Animated.View style={[styles.plasmaRing, styles.plasmaRing1, ring1Style]} />
+                  <Animated.View style={[styles.plasmaRing, styles.plasmaRing2, ring2Style]} />
+                  <Animated.View style={[styles.plasmaRing, styles.plasmaRing3, ring3Style]} />
+                </>
+              )}
               {/* Blob rings (responding) — always rendered, animated in/out */}
               <Animated.View style={[styles.plasmaRing, styles.plasmaRing1, blobRing1Style]} />
               <Animated.View style={[styles.plasmaRing, styles.plasmaRing2, blobRing2Style]} />
@@ -900,12 +1079,18 @@ export default function App() {
                     shadowOpacity: 0.8,
                     shadowRadius: 30,
                   },
+                  isListening && {
+                    shadowColor: '#ff4444',
+                    shadowOpacity: 0.6,
+                    shadowRadius: 25,
+                  },
                   blobOuterStyle,
                 ]}>
                 <Animated.View
                   style={[
                     styles.aoButton,
                     isThinking && styles.aoButtonActive,
+                    isListening && styles.aoButtonListening,
                     isResponding && styles.aoButtonResponding,
                     blobButtonStyle,
                   ]}>
@@ -913,9 +1098,13 @@ export default function App() {
                   <Text style={styles.buttonSubtext}>
                     {isThinking
                       ? 'Thinking...'
-                      : isResponding
-                        ? 'Speaking...'
-                        : 'Tap to Ask'}
+                      : isListening
+                        ? 'Listening...'
+                        : isResponding
+                          ? 'Speaking...'
+                          : nativeSpeechAvailable
+                            ? 'Hold to Ask'
+                            : 'Tap to Ask'}
                   </Text>
                 </Animated.View>
               </Animated.View>
@@ -992,6 +1181,9 @@ const styles = StyleSheet.create({
   buttonTouchArea: {
     alignItems: 'center',
     justifyContent: 'center',
+    minWidth: 200,
+    minHeight: 200,
+    padding: 10,
   },
   buttonContainer: {
     alignItems: 'center',

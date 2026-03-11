@@ -12,7 +12,11 @@
       "backgroundColor": "#000000"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "AO needs speech recognition to hear your questions",
+        "NSMicrophoneUsageDescription": "AO needs microphone access to listen to your voice"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -21,8 +25,18 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": ["RECORD_AUDIO"]
     },
+    "plugins": [
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "AO needs microphone access to listen to your voice",
+          "speechRecognitionPermission": "AO needs speech recognition to hear your questions"
+        }
+      ]
+    ],
     "web": {
       "favicon": "./assets/favicon.png"
     },

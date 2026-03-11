@@ -13,6 +13,7 @@
     },
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.inconspicuouse.ao",
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "AO needs speech recognition to hear your questions",
         "NSMicrophoneUsageDescription": "AO needs microphone access to listen to your voice"

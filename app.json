@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "AO-expo",
-    "slug": "AO-expo",
+    "name": "Artificial Opposition",
+    "slug": "artificial-opposition",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": true

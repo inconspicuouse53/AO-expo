@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Artificial Opposition",
-    "slug": "artificial-opposition",
+    "slug": "ao-expo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -25,6 +25,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "599e84ba-57ca-405a-8843-2f5a0e95e3dc"
+      }
+    },
+    "owner": "inconspicuouse"
   }
 }

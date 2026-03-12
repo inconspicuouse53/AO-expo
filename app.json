@@ -16,7 +16,8 @@
       "bundleIdentifier": "com.inconspicuouse.ao",
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "AO needs speech recognition to hear your questions",
-        "NSMicrophoneUsageDescription": "AO needs microphone access to listen to your voice"
+        "NSMicrophoneUsageDescription": "AO needs microphone access to listen to your voice",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -27,7 +28,10 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "permissions": ["RECORD_AUDIO"]
+      "permissions": [
+        "RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       [

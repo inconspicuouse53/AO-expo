@@ -240,6 +240,7 @@ export default function App() {
           language: 'en-US',
           rate: 1.0,
           pitch: 1.0,
+          volume: 1.0,
           onDone: () => {
             console.log('[AO] TTS done');
             setIsResponding(false);
@@ -976,21 +977,8 @@ export default function App() {
       <StatusBar barStyle="light-content" backgroundColor="#000" />
 
       <View style={styles.buttonArea}>
-        {/* Response text display */}
-        {(submittedText || response || isThinking) ? (
-          <View style={styles.responseArea}>
-            {submittedText && submittedText !== '...' ? (
-              <Text style={styles.questionText}>"{submittedText}"</Text>
-            ) : null}
-            {isThinking ? (
-              <Text style={styles.thinkingText}>Thinking...</Text>
-            ) : response ? (
-              <ScrollView style={styles.responseScroll} contentContainerStyle={styles.responseScrollContent}>
-                <Text style={styles.responseText}>{response}</Text>
-              </ScrollView>
-            ) : null}
-          </View>
-        ) : (
+        {/* Hint text only — no reply/response text at top */}
+        {!(submittedText || response || isThinking) && (
           <View style={styles.responseArea}>
             <Text style={styles.hintText}>
               {Platform.OS === 'web'
